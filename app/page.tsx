@@ -9,8 +9,9 @@ import {
 } from 'wagmi';
 import { parseEther } from 'viem';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '@/lib/contract';
-import { addressExplorerUrl } from '@/lib/links';
+import { addressExplorerUrl, txExplorerUrl } from '@/lib/links';
 import { CoffeeCup } from './components/CoffeeCup';
 import { StatsBar } from './components/StatsBar';
 import { Footer } from './components/Footer';
@@ -24,11 +25,19 @@ type Memo = {
   message: string;
 };
 
+// Per-tip amount/tx recovered from Etherscan (see app/api/tips). Ordered oldest
+// first, lining up 1:1 with the memos from getMemos().
+type Tip = { amount: string; hash: `0x${string}` };
+type TipsResponse = { tips: Tip[]; total: string };
+
 const QUICK_PICKS = [
   { label: '☕', amount: '0.001' },
   { label: '☕☕', amount: '0.005' },
   { label: '☕☕☕', amount: '0.01' },
 ];
+
+// How many supporters to show per page in the memo wall.
+const PAGE_SIZE = 3;
 
 const HOW_IT_WORKS = [
   {
@@ -60,6 +69,7 @@ export default function Home() {
   const [message, setMessage] = useState('');
   const [amount, setAmount] = useState('0.001');
   const [lastAction, setLastAction] = useState<'tip' | 'withdraw' | null>(null);
+  const [page, setPage] = useState(0);
 
   // Read the contract owner
   const { data: owner } = useReadContract({
@@ -78,6 +88,18 @@ export default function Home() {
     abi: CONTRACT_ABI,
     functionName: 'getMemos',
   });
+
+  // Per-tip ETH amounts (via our Etherscan-backed route handler).
+  const { data: tipsData, refetch: refetchTips } = useQuery<TipsResponse>({
+    queryKey: ['tips'],
+    queryFn: async () => {
+      const res = await fetch('/api/tips');
+      if (!res.ok) throw new Error('Failed to load tip amounts');
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+  const tips = tipsData?.tips ?? [];
 
   // Write functions
   const {
@@ -99,8 +121,11 @@ export default function Home() {
   useEffect(() => {
     if (isSuccess && lastAction === 'tip') {
       refetchMemos();
+      // Etherscan indexes a few seconds behind the chain, so the new amount may
+      // appear on a slightly later refetch — the card still shows immediately.
+      refetchTips();
     }
-  }, [isSuccess, lastAction, refetchMemos]);
+  }, [isSuccess, lastAction, refetchMemos, refetchTips]);
 
   const handleBuyCoffee = () => {
     if (!name || !message) return;
@@ -137,6 +162,14 @@ export default function Home() {
     address && owner && address.toLowerCase() === owner.toLowerCase();
   const memoList = (memos as Memo[] | undefined) ?? [];
   const busy = isPending || isConfirming;
+
+  // Newest-first, paginated. memoList stays oldest-first so tip amounts (also
+  // oldest-first) line up by index.
+  const ordered = [...memoList].reverse();
+  const totalPages = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pageStart = currentPage * PAGE_SIZE;
+  const pageMemos = ordered.slice(pageStart, pageStart + PAGE_SIZE);
 
   // Toast only follows the tipping flow (withdraw shows inline feedback).
   let toastStatus: TxStatus = 'idle';
@@ -337,30 +370,87 @@ export default function Home() {
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {[...memoList].reverse().map((memo, i) => (
-                <div
-                  key={`${memo.from}-${memo.timestamp}-${i}`}
-                  className="rounded-r-lg border-l-4 border-amber-500 bg-amber-50/30 py-2 pl-4 pr-2"
-                >
-                  <p className="font-semibold text-gray-800">{memo.name}</p>
-                  <p className="italic text-gray-600">
-                    &ldquo;{memo.message}&rdquo;
-                  </p>
-                  <p className="mt-1 text-xs text-gray-400">
-                    <a
-                      href={addressExplorerUrl(memo.from)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-amber-600 hover:underline"
+            <>
+              <div className="space-y-4">
+                {pageMemos.map((memo, li) => {
+                  const reversedIndex = pageStart + li;
+                  // memoList is oldest-first; tips line up by that same index.
+                  const tip = tips[memoList.length - 1 - reversedIndex];
+                  return (
+                    <div
+                      key={`${memo.from}-${memo.timestamp}-${reversedIndex}`}
+                      className="rounded-r-lg border-l-4 border-amber-500 bg-amber-50/30 py-2 pl-4 pr-3"
                     >
-                      {memo.from.slice(0, 6)}…{memo.from.slice(-4)}
-                    </a>{' '}
-                    · {new Date(Number(memo.timestamp) * 1000).toLocaleString()}
-                  </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold text-gray-800">
+                          {memo.name}
+                        </p>
+                        {tip && (
+                          <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+                            ☕ {tip.amount} ETH
+                          </span>
+                        )}
+                      </div>
+                      <p className="italic text-gray-600">
+                        &ldquo;{memo.message}&rdquo;
+                      </p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        <a
+                          href={addressExplorerUrl(memo.from)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-amber-600 hover:underline"
+                        >
+                          {memo.from.slice(0, 6)}…{memo.from.slice(-4)}
+                        </a>{' '}
+                        ·{' '}
+                        {new Date(
+                          Number(memo.timestamp) * 1000,
+                        ).toLocaleString()}
+                        {tip && (
+                          <>
+                            {' '}
+                            ·{' '}
+                            <a
+                              href={txExplorerUrl(tip.hash)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-amber-600 hover:underline"
+                            >
+                              View tx ↗
+                            </a>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="mt-6 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPage(currentPage - 1)}
+                    disabled={currentPage === 0}
+                    className="rounded-lg border border-amber-200 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ← Newer
+                  </button>
+                  <span className="text-sm text-gray-500">
+                    Page {currentPage + 1} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage(currentPage + 1)}
+                    disabled={currentPage >= totalPages - 1}
+                    className="rounded-lg border border-amber-200 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Older →
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
 
