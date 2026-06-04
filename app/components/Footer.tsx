@@ -1,10 +1,5 @@
 import { CONTRACT_ADDRESS } from '@/lib/contract';
-import {
-  contractExplorerUrl,
-  GITHUB_PROFILE,
-  GITHUB_REPOS,
-  SITE_URL,
-} from '@/lib/links';
+import { contractExplorerUrl, GITHUB_PROFILE, GITHUB_REPOS } from '@/lib/links';
 
 const shortAddress = `${CONTRACT_ADDRESS.slice(0, 6)}…${CONTRACT_ADDRESS.slice(-4)}`;
 
@@ -55,14 +50,6 @@ export function Footer() {
             className="text-amber-700 underline-offset-2 hover:underline"
           >
             GitHub · Frontend ↗
-          </a>
-          <a
-            href={SITE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-amber-700 underline-offset-2 hover:underline"
-          >
-            Live site ↗
           </a>
         </div>
       </div>
