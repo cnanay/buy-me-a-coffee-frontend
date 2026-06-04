@@ -1,0 +1,13 @@
+
+> coffee-frontend@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.7 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.16.197.136:3000
+- Environments: .env.local
+✓ Ready in 123ms
+
+ GET / 200 in 239ms (next.js: 84ms, application-code: 155ms)
+[browser] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+ HEAD / 200 in 51ms (next.js: 20ms, application-code: 30ms)
