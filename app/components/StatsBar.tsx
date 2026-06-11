@@ -8,6 +8,8 @@ import { CONTRACT_ADDRESS } from '@/lib/contract';
 type Props = {
   supporterCount: number;
   supportersLoading: boolean;
+  /** Which jar to show the balance of (defaults to the original contract). */
+  address?: `0x${string}`;
 };
 
 function StatCard({
@@ -40,12 +42,16 @@ function StatCard({
   );
 }
 
-export function StatsBar({ supporterCount, supportersLoading }: Props) {
+export function StatsBar({
+  supporterCount,
+  supportersLoading,
+  address = CONTRACT_ADDRESS,
+}: Props) {
   // Live contract balance. Note: this is the jar's *current* balance — it
   // drops back to 0 after the owner withdraws, since the contract doesn't
   // store a cumulative lifetime total.
   const { data: balance, isLoading: balanceLoading } = useBalance({
-    address: CONTRACT_ADDRESS,
+    address,
     chainId: sepolia.id,
   });
 

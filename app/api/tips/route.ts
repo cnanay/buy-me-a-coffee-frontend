@@ -1,4 +1,4 @@
-import { formatEther } from 'viem';
+import { formatEther, isAddress } from 'viem';
 import { CONTRACT_ADDRESS } from '@/lib/contract';
 
 // The contract's Memo struct doesn't store the tip amount, so we recover it from
@@ -14,15 +14,26 @@ type EtherscanTx = {
 
 const SEPOLIA_CHAIN_ID = 11155111;
 
-export async function GET() {
+export async function GET(request: Request) {
   const apiKey = process.env.ETHERSCAN_API_KEY;
   if (!apiKey) {
     return Response.json({ tips: [], total: '0', error: 'missing-key' });
   }
 
+  // Which jar to look at — defaults to the original contract, but factory
+  // jar pages pass their own address (?address=0x...).
+  const param = new URL(request.url).searchParams.get('address');
+  if (param && !isAddress(param)) {
+    return Response.json(
+      { tips: [], total: '0', error: 'bad-address' },
+      { status: 400 },
+    );
+  }
+  const jar = param ?? CONTRACT_ADDRESS;
+
   const url =
     `https://api.etherscan.io/v2/api?chainid=${SEPOLIA_CHAIN_ID}` +
-    `&module=account&action=txlist&address=${CONTRACT_ADDRESS}` +
+    `&module=account&action=txlist&address=${jar}` +
     `&startblock=0&endblock=99999999&sort=asc&apikey=${apiKey}`;
 
   let data: { status: string; result: EtherscanTx[] | string };
@@ -44,7 +55,7 @@ export async function GET() {
   const coffeeTxs = data.result.filter(
     (tx) =>
       tx.isError === '0' &&
-      tx.to.toLowerCase() === CONTRACT_ADDRESS.toLowerCase() &&
+      tx.to.toLowerCase() === jar.toLowerCase() &&
       BigInt(tx.value) > BigInt(0),
   );
 

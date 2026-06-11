@@ -1,43 +1,13 @@
 'use client';
 
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import {
-  useAccount,
-  useReadContract,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-} from 'wagmi';
-import { parseEther } from 'viem';
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from '@/lib/contract';
-import { addressExplorerUrl, txExplorerUrl } from '@/lib/links';
+import Link from 'next/link';
+import { useCallback, useState } from 'react';
+import { CONTRACT_ADDRESS } from '@/lib/contract';
 import { CoffeeCup } from './components/CoffeeCup';
+import { Header } from './components/Header';
 import { StatsBar } from './components/StatsBar';
 import { Footer } from './components/Footer';
-import { Confetti } from './components/Confetti';
-import { TxToast, type TxStatus } from './components/TxToast';
-
-type Memo = {
-  from: `0x${string}`;
-  timestamp: bigint;
-  name: string;
-  message: string;
-};
-
-// Per-tip amount/tx recovered from Etherscan (see app/api/tips). Ordered oldest
-// first, lining up 1:1 with the memos from getMemos().
-type Tip = { amount: string; hash: `0x${string}` };
-type TipsResponse = { tips: Tip[]; total: string };
-
-const QUICK_PICKS = [
-  { label: '☕', amount: '0.001' },
-  { label: '☕☕', amount: '0.005' },
-  { label: '☕☕☕', amount: '0.01' },
-];
-
-// How many supporters to show per page in the memo wall.
-const PAGE_SIZE = 3;
+import { JarPanel } from './components/JarPanel';
 
 const HOW_IT_WORKS = [
   {
@@ -57,149 +27,17 @@ const HOW_IT_WORKS = [
   },
 ];
 
-function shortError(err: unknown): string | undefined {
-  if (!err) return undefined;
-  const e = err as { shortMessage?: string; message?: string };
-  return e.shortMessage ?? e.message ?? 'Transaction failed';
-}
-
 export default function Home() {
-  const { address, isConnected } = useAccount();
-  const [name, setName] = useState('');
-  const [message, setMessage] = useState('');
-  const [amount, setAmount] = useState('0.001');
-  const [lastAction, setLastAction] = useState<'tip' | 'withdraw' | null>(null);
-  const [page, setPage] = useState(0);
-
-  // Read the contract owner
-  const { data: owner } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: CONTRACT_ABI,
-    functionName: 'owner',
-  });
-
-  // Read all memos
-  const {
-    data: memos,
-    refetch: refetchMemos,
-    isLoading: memosLoading,
-  } = useReadContract({
-    address: CONTRACT_ADDRESS,
-    abi: CONTRACT_ABI,
-    functionName: 'getMemos',
-  });
-
-  // Per-tip ETH amounts (via our Etherscan-backed route handler).
-  const { data: tipsData, refetch: refetchTips } = useQuery<TipsResponse>({
-    queryKey: ['tips'],
-    queryFn: async () => {
-      const res = await fetch('/api/tips');
-      if (!res.ok) throw new Error('Failed to load tip amounts');
-      return res.json();
-    },
-    staleTime: 30_000,
-  });
-  const tips = tipsData?.tips ?? [];
-
-  // Write functions
-  const {
-    writeContract,
-    data: hash,
-    isPending,
-    error: writeError,
-    reset,
-  } = useWriteContract();
-  const {
-    isLoading: isConfirming,
-    isSuccess,
-    error: receiptError,
-  } = useWaitForTransactionReceipt({ hash });
-
-  // Refetch the memo wall once a tip confirms so the new supporter appears.
-  // (Only a refetch here — field clearing happens on toast dismiss to keep
-  // this effect free of synchronous setState.)
-  useEffect(() => {
-    if (isSuccess && lastAction === 'tip') {
-      refetchMemos();
-      // Etherscan indexes a few seconds behind the chain, so the new amount may
-      // appear on a slightly later refetch — the card still shows immediately.
-      refetchTips();
-    }
-  }, [isSuccess, lastAction, refetchMemos, refetchTips]);
-
-  const handleBuyCoffee = () => {
-    if (!name || !message) return;
-    setLastAction('tip');
-    writeContract({
-      address: CONTRACT_ADDRESS,
-      abi: CONTRACT_ABI,
-      functionName: 'buyCoffee',
-      args: [name, message],
-      value: parseEther(amount),
-    });
-  };
-
-  const handleWithdraw = () => {
-    setLastAction('withdraw');
-    writeContract({
-      address: CONTRACT_ADDRESS,
-      abi: CONTRACT_ABI,
-      functionName: 'withdrawTips',
-    });
-  };
-
-  const dismissToast = () => {
-    // Clear the form only after a successful tip is acknowledged.
-    if (isSuccess && lastAction === 'tip') {
-      setName('');
-      setMessage('');
-    }
-    reset(); // clears hash/isPending/isSuccess so the toast returns to idle
-    setLastAction(null);
-  };
-
-  const isOwner =
-    address && owner && address.toLowerCase() === owner.toLowerCase();
-  const memoList = (memos as Memo[] | undefined) ?? [];
-  const busy = isPending || isConfirming;
-
-  // Newest-first, paginated. memoList stays oldest-first so tip amounts (also
-  // oldest-first) line up by index.
-  const ordered = [...memoList].reverse();
-  const totalPages = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages - 1);
-  const pageStart = currentPage * PAGE_SIZE;
-  const pageMemos = ordered.slice(pageStart, pageStart + PAGE_SIZE);
-
-  // Toast only follows the tipping flow (withdraw shows inline feedback).
-  let toastStatus: TxStatus = 'idle';
-  if (lastAction === 'tip') {
-    if (writeError || receiptError) toastStatus = 'error';
-    else if (isPending) toastStatus = 'pending';
-    else if (isConfirming) toastStatus = 'confirming';
-    else if (isSuccess) toastStatus = 'success';
-  }
+  const [supporters, setSupporters] = useState({ count: 0, loading: true });
+  const onSupporters = useCallback(
+    (count: number, loading: boolean) => setSupporters({ count, loading }),
+    [],
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-orange-100">
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
-        {/* Header */}
-        <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-bold text-amber-900 sm:text-3xl">
-            ☕ Buy Me A Coffee
-          </h1>
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-300">
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-              Sepolia Testnet
-            </span>
-            <ConnectButton
-              showBalance={false}
-              accountStatus="avatar"
-              chainStatus="none"
-            />
-          </div>
-        </header>
+        <Header />
 
         {/* Hero */}
         <section className="mb-10 flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
@@ -213,246 +51,26 @@ export default function Home() {
               forever on the Ethereum blockchain. Powered by a smart contract on
               the Sepolia testnet.
             </p>
+            <p className="mx-auto mt-3 max-w-md text-sm text-amber-900/60 sm:mx-0">
+              Want your own tip jar?{' '}
+              <Link
+                href="/create"
+                className="font-semibold text-amber-700 underline-offset-2 hover:underline"
+              >
+                Create one in one click →
+              </Link>
+            </p>
           </div>
         </section>
 
         {/* Live stats */}
         <StatsBar
-          supporterCount={memoList.length}
-          supportersLoading={memosLoading}
+          supporterCount={supporters.count}
+          supportersLoading={supporters.loading}
         />
 
-        {/* Tip form */}
-        <section className="mb-8 rounded-2xl bg-white p-6 shadow-lg ring-1 ring-amber-100 sm:p-8">
-          <h2 className="mb-6 text-xl font-semibold text-gray-800 sm:text-2xl">
-            Send a tip
-          </h2>
-
-          {!isConnected ? (
-            <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/50 p-6 text-center">
-              <p className="text-2xl">👛</p>
-              <p className="mt-2 text-gray-600">
-                Connect your wallet to send a tip.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <textarea
-                placeholder="Your message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-
-              {/* Quick-pick amounts */}
-              <div>
-                <p className="mb-2 text-sm font-medium text-gray-600">
-                  Choose an amount
-                </p>
-                <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                  {QUICK_PICKS.map((pick) => {
-                    const active = amount === pick.amount;
-                    return (
-                      <button
-                        key={pick.amount}
-                        type="button"
-                        onClick={() => setAmount(pick.amount)}
-                        className={`rounded-xl border px-2 py-3 text-center transition ${
-                          active
-                            ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-400'
-                            : 'border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50/50'
-                        }`}
-                      >
-                        <span className="block text-lg leading-none">
-                          {pick.label}
-                        </span>
-                        <span className="mt-1 block text-sm font-semibold text-gray-700">
-                          {pick.amount} ETH
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Manual amount */}
-              <div className="flex items-center gap-2">
-                <label htmlFor="amount" className="text-sm text-gray-600">
-                  Or enter your own (ETH):
-                </label>
-                <input
-                  id="amount"
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-32 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <button
-                onClick={handleBuyCoffee}
-                disabled={busy || !name || !message || Number(amount) <= 0}
-                className="w-full rounded-lg bg-amber-600 py-3 font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-              >
-                {isPending
-                  ? 'Confirm in wallet…'
-                  : isConfirming
-                    ? 'Sending…'
-                    : `Buy a coffee for ${amount} ETH ☕`}
-              </button>
-            </div>
-          )}
-        </section>
-
-        {/* Owner withdraw */}
-        {isOwner && (
-          <section className="mb-8 rounded-2xl border-2 border-amber-300 bg-amber-100 p-6">
-            <h2 className="mb-3 text-lg font-semibold text-amber-900 sm:text-xl">
-              Owner controls
-            </h2>
-            <button
-              onClick={handleWithdraw}
-              disabled={busy}
-              className="rounded-lg bg-amber-700 px-6 py-2 font-semibold text-white transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {lastAction === 'withdraw' && busy
-                ? 'Withdrawing…'
-                : 'Withdraw all tips'}
-            </button>
-            {lastAction === 'withdraw' && isSuccess && (
-              <p className="mt-3 text-sm font-medium text-green-700">
-                ✓ Tips withdrawn to your wallet.
-              </p>
-            )}
-            {lastAction === 'withdraw' && (writeError || receiptError) && (
-              <p className="mt-3 text-sm font-medium text-red-700">
-                {shortError(writeError ?? receiptError)}
-              </p>
-            )}
-          </section>
-        )}
-
-        {/* Memo wall */}
-        <section className="rounded-2xl bg-white p-6 shadow-lg ring-1 ring-amber-100 sm:p-8">
-          <h2 className="mb-6 text-xl font-semibold text-gray-800 sm:text-2xl">
-            Supporters{' '}
-            {!memosLoading && (
-              <span className="text-amber-600">({memoList.length})</span>
-            )}
-          </h2>
-
-          {memosLoading ? (
-            <div className="space-y-4">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="border-l-4 border-amber-200 py-2 pl-4">
-                  <div className="skeleton h-4 w-28 rounded" />
-                  <div className="skeleton mt-2 h-4 w-3/4 rounded" />
-                  <div className="skeleton mt-2 h-3 w-40 rounded" />
-                </div>
-              ))}
-            </div>
-          ) : memoList.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/40 py-10 text-center">
-              <p className="text-4xl">🫖</p>
-              <p className="mt-3 font-medium text-gray-700">No tips yet.</p>
-              <p className="text-sm text-gray-500">
-                Be the first to buy a coffee!
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-4">
-                {pageMemos.map((memo, li) => {
-                  const reversedIndex = pageStart + li;
-                  // memoList is oldest-first; tips line up by that same index.
-                  const tip = tips[memoList.length - 1 - reversedIndex];
-                  return (
-                    <div
-                      key={`${memo.from}-${memo.timestamp}-${reversedIndex}`}
-                      className="rounded-r-lg border-l-4 border-amber-500 bg-amber-50/30 py-2 pl-4 pr-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="font-semibold text-gray-800">
-                          {memo.name}
-                        </p>
-                        {tip && (
-                          <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
-                            ☕ {tip.amount} ETH
-                          </span>
-                        )}
-                      </div>
-                      <p className="italic text-gray-600">
-                        &ldquo;{memo.message}&rdquo;
-                      </p>
-                      <p className="mt-1 text-xs text-gray-400">
-                        <a
-                          href={addressExplorerUrl(memo.from)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:text-amber-600 hover:underline"
-                        >
-                          {memo.from.slice(0, 6)}…{memo.from.slice(-4)}
-                        </a>{' '}
-                        ·{' '}
-                        {new Date(
-                          Number(memo.timestamp) * 1000,
-                        ).toLocaleString()}
-                        {tip && (
-                          <>
-                            {' '}
-                            ·{' '}
-                            <a
-                              href={txExplorerUrl(tip.hash)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hover:text-amber-600 hover:underline"
-                            >
-                              View tx ↗
-                            </a>
-                          </>
-                        )}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {totalPages > 1 && (
-                <div className="mt-6 flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPage(currentPage - 1)}
-                    disabled={currentPage === 0}
-                    className="rounded-lg border border-amber-200 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ← Newer
-                  </button>
-                  <span className="text-sm text-gray-500">
-                    Page {currentPage + 1} of {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage(currentPage + 1)}
-                    disabled={currentPage >= totalPages - 1}
-                    className="rounded-lg border border-amber-200 px-4 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Older →
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+        {/* Tip form + owner withdraw + supporter wall (+ toast/confetti) */}
+        <JarPanel address={CONTRACT_ADDRESS} onSupporters={onSupporters} />
 
         {/* How it works */}
         <section className="mt-8 rounded-2xl bg-white/60 p-6 ring-1 ring-amber-100 sm:p-8">
@@ -474,15 +92,6 @@ export default function Home() {
 
         <Footer />
       </main>
-
-      {/* Global overlays */}
-      <TxToast
-        status={toastStatus}
-        hash={hash}
-        errorMessage={shortError(writeError ?? receiptError)}
-        onDismiss={dismissToast}
-      />
-      {toastStatus === 'success' && <Confetti />}
     </div>
   );
 }
