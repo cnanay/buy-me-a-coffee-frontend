@@ -10,13 +10,13 @@ export function Header() {
       <div className="flex items-center gap-4">
         <Link
           href="/"
-          className="text-2xl font-bold text-amber-900 transition hover:text-amber-700 sm:text-3xl"
+          className="whitespace-nowrap text-2xl font-bold text-amber-900 transition hover:text-amber-700 sm:text-3xl"
         >
           ☕ Buy Me A Coffee
         </Link>
         <Link
           href="/create"
-          className="hidden rounded-full bg-amber-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 sm:inline-block"
+          className="hidden whitespace-nowrap rounded-full bg-amber-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 sm:inline-block"
         >
           Create your jar
         </Link>
