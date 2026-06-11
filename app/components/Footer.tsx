@@ -1,7 +1,14 @@
 import { CONTRACT_ADDRESS } from '@/lib/contract';
-import { contractExplorerUrl, GITHUB_PROFILE, GITHUB_REPOS } from '@/lib/links';
+import { FACTORY_ADDRESS } from '@/lib/factory';
+import {
+  addressExplorerUrl,
+  contractExplorerUrl,
+  GITHUB_PROFILE,
+  GITHUB_REPOS,
+} from '@/lib/links';
 
-const shortAddress = `${CONTRACT_ADDRESS.slice(0, 6)}…${CONTRACT_ADDRESS.slice(-4)}`;
+const short = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+const shortAddress = short(CONTRACT_ADDRESS);
 
 export function Footer() {
   return (
@@ -19,7 +26,8 @@ export function Footer() {
             >
               @cnanay
             </a>
-            . Running on the Sepolia testnet.
+            . Create your own jar and get tipped on-chain — running on the
+            Sepolia testnet.
           </p>
         </div>
 
@@ -35,6 +43,16 @@ export function Footer() {
           >
             Contract on Etherscan ({shortAddress}) ↗
           </a>
+          {FACTORY_ADDRESS && (
+            <a
+              href={addressExplorerUrl(FACTORY_ADDRESS)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber-700 underline-offset-2 hover:underline"
+            >
+              Jar factory on Etherscan ({short(FACTORY_ADDRESS)}) ↗
+            </a>
+          )}
           <a
             href={GITHUB_REPOS.contracts}
             target="_blank"
